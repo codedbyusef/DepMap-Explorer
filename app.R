@@ -31,7 +31,7 @@ library(shinycssloaders)
 library(effsize)
 
 ALL_CANCER <- "__all__"
-DEFAULT_CANCER <- "kidney"
+DEFAULT_CANCER <- ALL_CANCER
 DEFAULT_GENE <- "BCL2L1"
 ESSENTIAL_CUT <- -0.5
 # DepMap's discretized copy-number calls (log2(CN ratio + 1) scale, diploid ~ 1):
@@ -162,8 +162,9 @@ ui <- page_sidebar(
       div(
         class = "callout mb-3 p-3",
         style = "border-left: 3px solid #c9a86a; background: #1d2026;",
-        tags$strong("Example — BCL2L1 in Kidney: "),
-        "a death suppressor showing strong dependency in WT lines (effect −0.85)."
+        tags$strong("Pan-cancer context — BCL2L1: "),
+        "a death suppressor. Across 1,086 cell lines the median gene effect is −0.75 and 73% of lines are below −0.5. ",
+        "Among WT vs altered lines (mutation or copy loss), altered lines are less dependent (Wilcoxon p = 3.5e-02, d = 0.45, n altered = 23)."
       ),
       downloadButton("dl_png", "Download PNG", class = "btn-sm mb-2"),
       withSpinner(plotOutput("dist_plot", height = "520px"), color = "#c9a86a")
