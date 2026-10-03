@@ -1,0 +1,12 @@
+# R
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rproj
+
+# Shiny / caches
+rsconnect/
+.cache/
+*.rds
+*.log
