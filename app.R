@@ -146,7 +146,10 @@ ui <- page_sidebar(
       "gene", "Gene",
       choices = NULL,
       selected = DEFAULT_GENE,
-      options = list(placeholder = "Search gene symbol")
+      options = list(
+        placeholder = "Type to search gene symbol",
+        openOnFocus = FALSE
+      )
     ),
     checkboxInput("overlay", "Split by WT vs Altered", value = TRUE),
     actionButton("reset", "Reset to defaults", class = "btn-outline-secondary w-100"),
@@ -161,13 +164,6 @@ ui <- page_sidebar(
 
     nav_panel(
       "Distribution",
-      div(
-        class = "callout mb-3 p-3",
-        style = "border-left: 3px solid #c9a86a; background: #1d2026;",
-        tags$strong("Pan-cancer context — BCL2L1: "),
-        "a death suppressor. Across 1,086 cell lines the median gene effect is −0.75 and 73% of lines are below −0.5. ",
-        "Among WT vs altered lines (mutation or copy loss), altered lines are less dependent (Wilcoxon p = 3.5e-02, d = 0.45, n altered = 23)."
-      ),
       downloadButton("dl_png", "Download PNG", class = "btn-sm mb-2"),
       withSpinner(plotOutput("dist_plot", height = "520px"), color = "#c9a86a")
     ),
