@@ -8,10 +8,12 @@
 # suppressors (BCL2L1, GPX4, MCL1), whose loss makes cells die, from death
 # executioners (CASP3, BAX, MLKL), which drive cell death when active.
 #
-# The ccRCC kidney use case is the worked example. It uses a WT vs altered
-# split as a positive control, validated against TP53 (Cohen's d = 1.83) and
-# PTEN (d = 0.63). "Altered" means a mutation call is present OR log2 copy
-# number is at or below DepMap's loss threshold (0.731).
+# The WT vs altered split is used as a positive control against TP53 and PTEN.
+# The project spec gives Cohen's d = 1.83 (TP53) and 0.63 (PTEN). On the
+# pan-cancer DepMap data with the definition below, the values are d = -1.65
+# (TP53) and -0.49 (PTEN). The spec values are NOT reproduced; the source of
+# the spec values is unknown. "Altered" means a mutation call is present OR
+# log2 copy number is at or below DepMap's loss threshold (0.731).
 #
 # Data: all four tables are loaded from Bioconductor through ExperimentHub
 # using the depmap package. See data/README.md.
