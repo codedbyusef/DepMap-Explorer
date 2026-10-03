@@ -148,7 +148,8 @@ ui <- page_sidebar(
       selected = DEFAULT_GENE,
       options = list(
         placeholder = "Type to search gene symbol",
-        openOnFocus = FALSE
+        openOnFocus = FALSE,
+        maxOptions = 50
       )
     ),
     checkboxInput("overlay", "Split by WT vs Altered", value = TRUE),
@@ -233,7 +234,7 @@ server <- function(input, output, session) {
     )
 
     genes <- sort(unique(d$crispr$gene_name))
-    updateSelectizeInput(session, "gene", choices = genes, selected = DEFAULT_GENE, server = TRUE)
+    updateSelectizeInput(session, "gene", choices = genes, selected = DEFAULT_GENE, server = FALSE)
   })
 
   # One row per cell line with CRISPR data for the selected gene, joined with
