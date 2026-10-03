@@ -1,12 +1,12 @@
 # =============================================================================
-# DepMap Cell Death Explorer
+# DepMap Explorer
 #
 # Project context
 # ---------------
 # This app explores DepMap CRISPR gene dependency data to identify cancer cell
-# lines that depend on cell death regulators. The focus is on separating death
+# lines that depend on death regulators. The focus is on separating death
 # suppressors (BCL2L1, GPX4, MCL1), whose loss makes cells die, from death
-# executioners (CASP3, BAX, MLKL), which drive cell death when active.
+# executioners (CASP3, BAX, MLKL), which drive apoptosis when active.
 #
 # The WT vs altered split is used as a positive control against TP53 and PTEN.
 # The project spec gives Cohen's d = 1.83 (TP53) and 0.63 (PTEN). On the
@@ -112,7 +112,7 @@ app_theme <- bs_theme(
 )
 
 ui <- page_sidebar(
-  title = "DepMap Cell Death Explorer",
+  title = "DepMap Explorer",
   theme = app_theme,
   sidebar = sidebar(
     width = 300,

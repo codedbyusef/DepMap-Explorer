@@ -36,4 +36,4 @@ Only the server logic has been checked headlessly. Source the app with `source("
 
 ## Repo
 
-Default branch is `main`, remote `origin` is `github.com/codedbyusef/shinyapps` (public). `data/` holds only a README. No data files are committed; everything loads through the depmap package.
+Default branch is `main`, remote `origin` is `github.com/codedbyusef/DepMap-Explorer` (public). `data/` holds only a README. No data files are committed; everything loads through the depmap package.

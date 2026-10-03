@@ -1,6 +1,6 @@
 # requirements.R
 #
-# Installs every package the DepMap Cell Death Explorer needs.
+# Installs every package the DepMap Explorer needs.
 # Run with: Rscript requirements.R   (or source("requirements.R") from R)
 #
 # CRAN packages are installed only if missing. Bioconductor packages

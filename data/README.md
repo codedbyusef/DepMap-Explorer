@@ -1,6 +1,6 @@
 # Data
 
-The DepMap Cell Death Explorer does not ship any data files. Everything is loaded at runtime from **Bioconductor** through **ExperimentHub**, using the `depmap` package. No manual downloads and no API tokens are needed.
+The DepMap Explorer does not ship any data files. Everything is loaded at runtime from **Bioconductor** through **ExperimentHub**, using the `depmap` package. No manual downloads and no API tokens are needed.
 
 ## Datasets
 
