@@ -82,27 +82,6 @@ compare_groups <- function(df) {
   )
 }
 
-interpret_result <- function(cmp, gene, df) {
-  p_txt <- format_p(cmp$p)
-  if (cmp$p >= 0.05) {
-    sprintf(
-      "No significant difference in %s dependency between WT and altered lines (p = %s, d = %.2f).",
-      gene, p_txt, cmp$d
-    )
-  } else if (cmp$d > 0) {
-    tail <- if (any(df$cn_loss)) ", consistent with copy number loss relieving the dependency" else ""
-    sprintf(
-      "WT lines are significantly more dependent on %s than altered lines (p = %s, d = %.2f)%s.",
-      gene, p_txt, cmp$d, tail
-    )
-  } else {
-    sprintf(
-      "Altered lines are significantly more dependent on %s than WT lines (p = %s, d = %.2f).",
-      gene, p_txt, cmp$d
-    )
-  }
-}
-
 group_stats <- function(df, label) {
   x <- df$dependency
   if (length(x) == 0) {
@@ -165,13 +144,19 @@ ui <- page_sidebar(
 
     nav_panel(
       "Distribution",
-      downloadButton("dl_png", "Download PNG", class = "btn-sm mb-2"),
+      conditionalPanel(
+        condition = "input.gene && input.gene !== ''",
+        downloadButton("dl_png", "Download PNG", class = "btn-sm mb-2")
+      ),
       withSpinner(plotOutput("dist_plot", height = "520px"), color = "#c9a86a")
     ),
 
     nav_panel(
       "Cell Line Table",
-      downloadButton("dl_csv", "Download CSV", class = "btn-sm mb-2"),
+      conditionalPanel(
+        condition = "input.gene && input.gene !== ''",
+        downloadButton("dl_csv", "Download CSV", class = "btn-sm mb-2")
+      ),
       withSpinner(DTOutput("cell_table"), color = "#c9a86a")
     ),
 
@@ -419,8 +404,7 @@ server <- function(input, output, session) {
         tags$strong("Wilcoxon p = "), format_p(cmp$p), tags$br(),
         tags$strong("Cohen's d = "), sprintf("%.2f", cmp$d), tags$br(),
         tags$strong("Lines: "), sprintf("WT n = %d, altered n = %d", cmp$n_wt, cmp$n_alt)
-      ),
-      tags$p(tags$em(interpret_result(cmp, input$gene, df)))
+      )
     )
   })
 
