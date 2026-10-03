@@ -11,7 +11,7 @@
 # The ccRCC kidney use case is the worked example. It uses a WT vs altered
 # split as a positive control, validated against TP53 (Cohen's d = 1.83) and
 # PTEN (d = 0.63). "Altered" means a mutation call is present OR log2 copy
-# number is below 1.5.
+# number is at or below DepMap's loss threshold (0.731).
 #
 # Data: all four tables are loaded from Bioconductor through ExperimentHub
 # using the depmap package. See data/README.md.
@@ -34,7 +34,11 @@ ALL_CANCER <- "__all__"
 DEFAULT_CANCER <- "kidney"
 DEFAULT_GENE <- "BCL2L1"
 ESSENTIAL_CUT <- -0.5
-CN_LOSS_CUT <- 1.5
+# DepMap's discretized copy-number calls (log2(CN ratio + 1) scale, diploid ~ 1):
+# heterozygous loss is (0.521, 0.731], deep deletion is <= 0.521. Any loss call
+# is therefore <= 0.7311832. Source: DepMap forum, "Defining deep deletions and
+# amplifications" and "Classifying copy number alterations".
+CN_LOSS_CUT <- 0.7311832
 COL_ESSENTIAL <- "#e05d5d"
 COL_NEUTRAL <- "#9aa0a6"
 COL_GROWTH <- "#6f9fd8"
@@ -99,6 +103,9 @@ interpret_result <- function(cmp, gene, df) {
 
 group_stats <- function(df, label) {
   x <- df$dependency
+  if (length(x) == 0) {
+    return(tibble(Group = label, n = 0L, Median = NA_real_, Mean = NA_real_, Min = NA_real_, Max = NA_real_))
+  }
   tibble(
     Group = label,
     n = length(x),
@@ -143,7 +150,7 @@ ui <- page_sidebar(
     actionButton("reset", "Reset to defaults", class = "btn-outline-secondary w-100"),
     tags$hr(),
     tags$small(
-      paste0("Altered = mutation call present OR log2 copy number < ", CN_LOSS_CUT, "."),
+      paste0("Altered = mutation call present OR log2 copy number <= ", CN_LOSS_CUT, "."),
       "Scores: below −0.5 essential, above 0 growth benefit."
     )
   ),
@@ -253,7 +260,7 @@ server <- function(input, output, session) {
       left_join(cn, by = "depmap_id") %>%
       mutate(
         mutated = depmap_id %in% mut_ids,
-        cn_loss = !is.na(log_copy_number) & log_copy_number < CN_LOSS_CUT,
+        cn_loss = !is.na(log_copy_number) & log_copy_number <= CN_LOSS_CUT,
         altered = mutated | cn_loss,
         group = if_else(altered, "Altered", "WT"),
         status = case_when(
