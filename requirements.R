@@ -6,8 +6,7 @@
 # CRAN packages are installed only if missing. Bioconductor packages go through
 # BiocManager. GOfan is installed from GitHub.
 #
-# Runtime packages are needed to run the app. Build-only packages (depmap,
-# ExperimentHub) are only used by preprocess.R, which writes the Parquet files
+# Runtime packages are needed to run the app. Build-only packages (data.table) are only used by preprocess.R, which writes the Parquet files
 # in data/ that the app reads.
 
 cran_pkgs <- c(
@@ -21,15 +20,13 @@ cran_pkgs <- c(
   "arrow",
   "plotly",
   "remotes",
-  "digest"  # checksums in get_data.R
+  "digest",  # checksums in get_data.R
+  "data.table"  # build-only (preprocess.R)
 )
 
 bioc_pkgs <- c(
   "GO.db",
-  "org.Hs.eg.db",
-  # build-only (preprocess.R)
-  "depmap",
-  "ExperimentHub"
+  "org.Hs.eg.db"
 )
 
 options(repos = c(CRAN = "https://cloud.r-project.org"))

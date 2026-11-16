@@ -4,7 +4,7 @@
 # To rebuild from DepMap instead, run `Rscript preprocess.R`.
 
 REPO <- "codedbyusef/DepMap-Explorer"
-TAG <- "data-22Q2"
+TAG <- "data-24Q4"
 DATA_DIR <- "data"
 MANIFEST <- file.path(DATA_DIR, "checksums.txt")  # lines: "<sha256>  <file>"
 

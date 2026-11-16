@@ -10,13 +10,13 @@
 #
 # The WT vs altered split is used as a positive control against TP53 and PTEN.
 # The project spec gives Cohen's d = 1.83 (TP53) and 0.63 (PTEN). On the
-# pan-cancer DepMap data with the definition below, the values are d = -1.65
-# (TP53) and -0.49 (PTEN). The spec values are NOT reproduced; the source of
+# pan-cancer DepMap data with the definition below, the values are d = -1.76
+# (TP53) and -0.40 (PTEN) on 24Q4. The spec values are NOT reproduced; the source of
 # the spec values is unknown. "Altered" means a mutation call is present OR
 # log2 copy number is at or below DepMap's loss threshold (0.731).
 #
-# Data: preprocess.R converts the depmap tables to Parquet files in data/ once.
-# The app reads them lazily with arrow and never touches depmap or ExperimentHub
+# Data: preprocess.R converts the DepMap 24Q4 CSV files to Parquet files in data/ once.
+# The app reads them lazily with arrow and never touches the raw files
 # at runtime. See data/README.md.
 #
 # Gene effect convention: CRISPR scores are DepMap Chronos gene effects.

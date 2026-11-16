@@ -68,20 +68,43 @@ raw <- function(f) {
   p
 }
 
-# Wide release matrix (models in rows, "SYMBOL (EntrezID)" in columns) to long
-# depmap_id, gene_name, <value>. Drops NA values and duplicate symbols.
-read_wide <- function(file, value) {
-  dt <- data.table::fread(raw(file), check.names = FALSE)
-  data.table::setnames(dt, 1, "depmap_id")
-  long <- data.table::melt(dt, id.vars = "depmap_id", variable.name = "gene",
-                           value.name = value, na.rm = TRUE)
-  rm(dt)
-  levels(long$gene) <- sub(" \\(.*$", "", levels(long$gene))
-  long <- as_tibble(long) %>%
-    mutate(gene_name = as.character(gene), .keep = "unused") %>%
-    distinct(depmap_id, gene_name, .keep_all = TRUE) %>%
-    relocate(depmap_id, gene_name)
-  long
+# Wide release matrix (models in rows, "SYMBOL (EntrezID)" in columns) to a long
+# depmap_id, gene_name, <value> Parquet file sorted by gene. The CSV is read in
+# chunks of GENE_CHUNK genes, taken in alphabetical order, so memory stays small
+# (the copy number CSV is 1.4 GB) and the file is globally sorted by gene without
+# a full sort. Drops NA values and duplicate symbols (the first column wins).
+GENE_CHUNK <- 2000
+
+write_wide_sorted <- function(file, value, parquet) {
+  path <- raw(file)
+  hdr <- names(data.table::fread(path, nrows = 0, check.names = FALSE))
+  genes <- data.frame(col = hdr[-1], gene_name = sub(" \\(.*$", "", hdr[-1]))
+  genes <- genes[!duplicated(genes$gene_name), ]
+  genes <- genes[order(genes$gene_name, method = "radix"), ]
+  groups <- split(genes, ceiling(seq_len(nrow(genes)) / GENE_CHUNK))
+  writer <- NULL
+  n_rows <- 0
+  for (g in groups) {
+    dt <- data.table::fread(path, select = c(hdr[1], g$col), check.names = FALSE)
+    data.table::setnames(dt, c("depmap_id", g$gene_name))
+    long <- data.table::melt(dt, id.vars = "depmap_id", variable.name = "gene_name",
+                             value.name = value, na.rm = TRUE, variable.factor = FALSE)
+    rm(dt)
+    long <- long[order(long$gene_name, method = "radix"), ]
+    tab <- arrow::arrow_table(long)
+    if (is.null(writer)) {
+      writer <- arrow::ParquetFileWriter$create(
+        tab$schema, arrow::FileOutputStream$create(out(parquet)),
+        properties = arrow::ParquetWriterProperties$create(names(tab), compression = "zstd"))
+    }
+    writer$WriteTable(tab, chunk_size = CHUNK)
+    n_rows <- n_rows + nrow(long)
+    rm(long, tab)
+    invisible(gc())
+  }
+  writer$Close()
+  message(sprintf("  %s: %s rows, %.1f MB", parquet,
+                  format(n_rows, big.mark = ","), file.size(out(parquet)) / 1e6))
 }
 
 dir.create(OUT_DIR, showWarnings = FALSE)
@@ -97,8 +120,7 @@ write_sorted <- function(df, file) {
 if (!GO_ONLY) {
   # -- Raw tables ---------------------------------------------------------------
   message("CRISPR gene effects")
-  crispr <- read_wide("CRISPRGeneEffect.csv", "dependency")
-  write_sorted(crispr, "crispr.parquet")
+  write_wide_sorted("CRISPRGeneEffect.csv", "dependency", "crispr.parquet")
 
   message("Cell line metadata")
   meta <- data.table::fread(raw("Model.csv"),
@@ -124,13 +146,12 @@ if (!GO_ONLY) {
   message("Copy number (large table)")
   # OmicsCNGene is log2(relative copy number + 1), diploid about 1.0, the same
   # scale as before, so CN_LOSS_CUT in app.R still applies.
-  cn <- read_wide("OmicsCNGene.csv", "log_copy_number")
-  write_sorted(cn, "copy_number.parquet")
-  rm(cn)
+  write_wide_sorted("OmicsCNGene.csv", "log_copy_number", "copy_number.parquet")
   invisible(gc())
 
   # -- Lineage vs rest effect sizes -----------------------------------------------
   message("Lineage effect sizes")
+  crispr <- read_parquet(out("crispr.parquet"))
   d <- crispr %>% inner_join(select(meta, depmap_id, lineage), by = "depmap_id") %>%
     filter(!is.na(lineage))
   rm(crispr)
@@ -169,7 +190,7 @@ if (!GO_ONLY) {
   # Spot check against the reference figure (kidney: VHL ~ 1.7, TP53 ~ 1.3).
   message("Kidney spot check (Cohen's d, q):")
   print(as.data.frame(
-    eff %>% filter(lineage == "kidney", gene_name %in% c("VHL", "TP53", "MCL1", "PTEN", "GPX4", "BCL2L1")) %>%
+    eff %>% filter(lineage == "Kidney", gene_name %in% c("VHL", "TP53", "MCL1", "PTEN", "GPX4", "BCL2L1")) %>%
       mutate(cohen_d = round(cohen_d, 2), q = signif(q, 2)) %>%
       select(gene_name, n_lineage, n_other, cohen_d, q)
   ))
