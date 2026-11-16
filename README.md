@@ -44,9 +44,8 @@ Run `Rscript get_data.R` first so the Parquet files go into the bundle, then `rs
 
 ## Known limitations
 
-- The project spec gives TP53 d = 1.83 and PTEN d = 0.63 as positive controls. On pan-cancer data the app gives TP53 d = -1.65 and PTEN d = -0.49, so the spec values are not reproduced and the controls are not validated.
-- The GO enrichment cutoffs (d <= -0.5, q < 0.05) are first guesses, and only 9 lineages have significant terms.
-- The Dependency Plot and Cell Death GO tabs have not been checked in a browser.
+- The project spec gives TP53 d = 1.83 and PTEN d = 0.63 as positive controls. The app gives TP53 d = -1.65 and PTEN d = -0.49 on 22Q2. I tried mutation-only, mutation or copy loss at several cutoffs, and copy loss only, on 22Q2 and on 24Q4. TP53 stays between -1.55 and -1.76 and PTEN between -0.06 and -0.71. The sign differs from the spec (the app uses altered minus WT) and no definition reaches 1.83, so the controls are not validated and the spec's source is unknown.
+- The GO enrichment cutoffs are an analysis choice with no single right value. With q < 0.05, d <= -0.3, -0.5 and -0.8 give significant cell death terms in 10, 9 and 13 of 25 lineages. Stricter cutoffs find more lineages because the gene sets get smaller and more specific. The shipped data use d <= -0.5.
 
 ## Data license
 
