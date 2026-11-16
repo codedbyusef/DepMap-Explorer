@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 - Install dependencies: `Rscript requirements.R` (CRAN packages, Bioconductor packages, and GOfan from GitHub).
-- Download the prebuilt data files: `Rscript get_data.R` (fetches from the GitHub Release `data-22Q2` and checks `data/checksums.txt`).- Deploy to shinyapps.io: run `get_data.R` first so `data/*.parquet` are in the bundle (about 470 MB, under the 1 GB Free/Starter limit). The data are DepMap 22Q2, which is not the newest release; the Bioconductor `depmap` package stops there.
+- Download the prebuilt data files: `Rscript get_data.R` (fetches from the GitHub Release `data-22Q2` and checks `data/checksums.txt`).
+- Deploy to shinyapps.io: run `get_data.R` first so `data/*.parquet` are in the bundle (about 470 MB, under the 1 GB Free/Starter limit). The data are DepMap 22Q2, which is not the newest release; the Bioconductor `depmap` package stops there.
 - Build the data files: `Rscript preprocess.R`. Run it once before the app (and again after a DepMap update). `Rscript preprocess.R go` redoes only the GO enrichment from the existing `lineage_effects.parquet`. It writes Parquet files to `data/` (gitignored). The app stops at startup with a message if they are missing.
 - Run the app: `Rscript -e 'shiny::runApp(".", port = 4321, launch.browser = FALSE)'`.
 - Syntax check after edits: `Rscript -e 'invisible(parse("app.R"))'`.
