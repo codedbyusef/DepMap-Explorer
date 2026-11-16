@@ -15,8 +15,9 @@
 # the spec values is unknown. "Altered" means a mutation call is present OR
 # log2 copy number is at or below DepMap's loss threshold (0.731).
 #
-# Data: all four tables are loaded from Bioconductor through ExperimentHub
-# using the depmap package. See data/README.md.
+# Data: preprocess.R converts the depmap tables to Parquet files in data/ once.
+# The app reads them lazily with arrow and never touches depmap or ExperimentHub
+# at runtime. See data/README.md.
 #
 # Gene effect convention: CRISPR scores are DepMap Chronos gene effects.
 # Below -0.5 = essential (dependency). Above 0 = growth benefit.
@@ -31,6 +32,7 @@ library(ggplot2)
 library(DT)
 library(shinycssloaders)
 library(effsize)
+library(arrow)
 
 ALL_CANCER <- "__all__"
 DEFAULT_CANCER <- ALL_CANCER
@@ -47,9 +49,62 @@ COL_GROWTH <- "#6f9fd8"
 COL_BG <- "#15171c"
 COL_FG <- "#e4e2dd"
 
+DATA_DIR <- "data"
+
+# Cell death gene panel for the Dependency Plot tab. Roles follow the project
+# figure: death suppressors, executioners, and growth suppressors / other.
+# Colours are lightened from the figure so they read on the dark background.
+ROLE_COLOURS <- c(
+  "death suppressor" = "#4da3e0",
+  "executioner" = "#b8b4aa",
+  "growth suppressor / other" = "#f0a030",
+  "added gene" = "#8f98a3"
+)
+# Role groups offered as presets. All are selected by default.
+PRESET_ROLES <- names(ROLE_COLOURS)[1:3]
+DEFAULT_ROLES <- PRESET_ROLES
+GENE_PANEL <- local({
+  roles <- PRESET_ROLES
+  data.frame(
+    gene_name = c(
+      "MCL1", "BCL2", "SLC7A11", "BCL2L1", "GPX4",
+      "CASP7", "APAF1", "MLKL", "CASP8", "BID", "RIPK3", "CASP1", "RIPK1", "BAX",
+      "BAK1", "GSDMD", "AIFM1", "CASP3", "CASP9", "PARP1",
+      "VHL", "TP53", "PTEN"
+    ),
+    role = roles[c(rep(1, 5), rep(2, 15), rep(3, 3))],
+    stringsAsFactors = FALSE
+  )
+})
+
 pretty_label <- function(x) tools::toTitleCase(gsub("_", " ", x))
 
 format_p <- function(p) formatC(p, format = "e", digits = 1)
+
+# Open the preprocessed Parquet files. The big tables (crispr, copy number,
+# mutations) stay on disk and are filtered through arrow per gene; the small
+# ones are read into memory once when the app starts and shared by all sessions.
+open_data <- function(dir = DATA_DIR) {
+  path <- function(f) {
+    p <- file.path(dir, f)
+    if (!file.exists(p)) {
+      stop("Missing ", p, ". Run `Rscript get_data.R` to download the data files, or `Rscript preprocess.R` to build them.", call. = FALSE)
+    }
+    p
+  }
+  crispr <- open_dataset(path("crispr.parquet"))
+  list(
+    crispr = crispr,
+    cn = open_dataset(path("copy_number.parquet")),
+    mut = open_dataset(path("mutations.parquet")),
+    meta = read_parquet(path("meta.parquet")),
+    effects = read_parquet(path("lineage_effects.parquet")),
+    go = read_parquet(path("go_enrichment.parquet")),
+    genes = sort(unique(read_parquet(path("lineage_effects.parquet"), col_select = "gene_name")$gene_name))
+  )
+}
+
+DATA <- open_data()
 
 theme_academic <- function() {
   theme_minimal(base_size = 13) +
@@ -169,6 +224,48 @@ ui <- page_sidebar(
     nav_panel(
       "Gene Summary",
       withSpinner(uiOutput("gene_summary"), color = "#c9a86a")
+    ),
+
+    nav_panel(
+      "Dependency Plot",
+      checkboxGroupInput(
+        "dep_roles", "Gene groups",
+        choices = PRESET_ROLES, selected = DEFAULT_ROLES, inline = TRUE
+      ),
+      selectizeInput(
+        "dep_genes", "Genes on the plot",
+        choices = NULL, multiple = TRUE, width = "100%",
+        options = list(placeholder = "Type to add any gene", maxOptions = 50)
+      ),
+      tags$p(
+        class = "small text-muted",
+        "Ticking a group selects its genes and keeps any extra genes you added.",
+        "Significance is corrected across the genes shown."
+      ),
+      downloadButton("dl_dep_png", "Download PNG", class = "btn-sm mb-2"),
+      withSpinner(plotOutput("dep_plot", height = "auto"), color = "#c9a86a")
+    ),
+
+    nav_panel(
+      "Cell Death GO",
+      radioButtons(
+        "go_backend", NULL,
+        choices = c("Static (ggplot2)" = "ggplot2", "Interactive (plotly)" = "plotly"),
+        inline = TRUE
+      ),
+      conditionalPanel(
+        condition = "input.go_backend === 'ggplot2'",
+        withSpinner(plotOutput("go_plot_static", height = "640px"), color = "#c9a86a")
+      ),
+      conditionalPanel(
+        condition = "input.go_backend === 'plotly'",
+        withSpinner(plotly::plotlyOutput("go_plot_interactive", height = "640px"), color = "#c9a86a")
+      ),
+      tags$p(
+        class = "small text-muted mt-2",
+        "GO Biological Process terms under cell death (GO:0008219) enriched among genes this lineage",
+        "depends on more than other lineages (Cohen's d <= -0.5, q < 0.05). Colour is -log10 adjusted p."
+      )
     )
   )
 )
@@ -179,34 +276,9 @@ ui <- page_sidebar(
 
 server <- function(input, output, session) {
 
-  # Load the four depmap tables once per session. The reactive caches its value
-  # for the life of the session, so changing inputs never triggers a reload.
-  datasets <- reactive({
-    withProgress(message = "Loading DepMap data from ExperimentHub", value = 0, {
-      incProgress(0.1, detail = "CRISPR gene effects")
-      crispr <- depmap::depmap_crispr() %>%
-        select(depmap_id, gene_name, dependency)
-
-      incProgress(0.25, detail = "Cell line metadata")
-      meta <- depmap::depmap_metadata() %>%
-        select(depmap_id, cell_line_name, primary_disease, lineage) %>%
-        distinct(depmap_id, .keep_all = TRUE)
-
-      incProgress(0.25, detail = "Copy number (large table)")
-      cn <- depmap::depmap_copyNumber() %>%
-        select(depmap_id, gene_name, log_copy_number)
-
-      incProgress(0.25, detail = "Mutation calls")
-      mut <- depmap::depmap_mutationCalls() %>%
-        select(depmap_id, gene_name)
-
-      list(crispr = crispr, meta = meta, cn = cn, mut = mut)
-    })
-  })
-
   # Fill the dropdown and gene search once the data is available.
   observe({
-    d <- datasets()
+    d <- DATA
 
     lineages <- sort(unique(stats::na.omit(d$meta$lineage)))
     updateSelectInput(
@@ -218,7 +290,7 @@ server <- function(input, output, session) {
       selected = DEFAULT_CANCER
     )
 
-    genes <- sort(unique(d$crispr$gene_name))
+    genes <- d$genes
     updateSelectizeInput(session, "gene", choices = genes, selected = DEFAULT_GENE, server = FALSE)
   })
 
@@ -226,21 +298,27 @@ server <- function(input, output, session) {
   # metadata, copy number and mutation status. Depends only on the gene, so
   # changing the cancer type does not recompute it.
   gene_frame <- reactive({
-    d <- datasets()
+    d <- DATA
     gene <- req(input$gene)
 
+    # Each filter runs inside arrow, so only this gene's rows are read from disk.
     cn <- d$cn %>%
       filter(gene_name == !!gene) %>%
       select(depmap_id, log_copy_number) %>%
+      collect() %>%
       distinct(depmap_id, .keep_all = TRUE)
 
     mut_ids <- d$mut %>%
       filter(gene_name == !!gene) %>%
+      select(depmap_id) %>%
+      collect() %>%
       pull(depmap_id) %>%
       unique()
 
     d$crispr %>%
       filter(gene_name == !!gene) %>%
+      select(depmap_id, gene_name, dependency) %>%
+      collect() %>%
       left_join(d$meta, by = "depmap_id") %>%
       left_join(cn, by = "depmap_id") %>%
       mutate(
@@ -446,6 +524,166 @@ server <- function(input, output, session) {
         })
       )
     )
+  })
+
+  # -- Tab 5: dependency plot (cell death panel, lineage vs all others) ---------
+
+  # Gene picker. Fill the choices once; ticking role groups rewrites the
+  # selection as (extra genes the user added) + (genes of the ticked groups).
+  observe({
+    updateSelectizeInput(
+      session, "dep_genes", choices = DATA$genes, server = FALSE,
+      selected = GENE_PANEL$gene_name[GENE_PANEL$role %in% DEFAULT_ROLES]
+    )
+  })
+
+  observeEvent(input$dep_roles, ignoreNULL = FALSE, ignoreInit = TRUE, {
+    extra <- setdiff(isolate(input$dep_genes), GENE_PANEL$gene_name)
+    updateSelectizeInput(
+      session, "dep_genes",
+      selected = c(GENE_PANEL$gene_name[GENE_PANEL$role %in% input$dep_roles], extra)
+    )
+  })
+
+  # Lineage vs all other lineages for each selected gene. Cohen's d is lineage minus
+  # others (negative = lineage more dependent). Significance is a Wilcoxon test
+  # with Benjamini-Hochberg correction across the genes shown, the same family
+  # of tests the plot shows. Scores are read from the crispr Parquet file for the
+  # selected genes only.
+  panel_effects <- reactive({
+    cancer <- req(input$cancer)
+    validate(need(
+      cancer != ALL_CANCER,
+      "Choose a cancer type in the sidebar. This plot compares one lineage against all other lineages."
+    ))
+    genes <- req(input$dep_genes)
+    pc <- DATA$crispr %>%
+      filter(gene_name %in% !!genes) %>%
+      select(depmap_id, gene_name, dependency) %>%
+      collect() %>%
+      inner_join(select(DATA$meta, depmap_id, lineage), by = "depmap_id") %>%
+      filter(!is.na(lineage))
+    res <- lapply(split(pc, pc$gene_name), function(g) {
+      a <- g$dependency[g$lineage == cancer]
+      b <- g$dependency[g$lineage != cancer]
+      if (length(a) < 5 || length(b) < 2) return(NULL)
+      data.frame(
+        gene_name = g$gene_name[1], n_lineage = length(a), n_other = length(b),
+        cohen_d = effsize::cohen.d(a, b)$estimate,
+        p = suppressWarnings(wilcox.test(a, b)$p.value)
+      )
+    })
+    df <- bind_rows(res)
+    validate(need(nrow(df) > 0, "Not enough cell lines in this lineage (at least 5 are needed)."))
+    df$q <- p.adjust(df$p, method = "BH")
+    df <- left_join(df, GENE_PANEL, by = "gene_name")
+    df$role[is.na(df$role)] <- "added gene"
+    df
+  })
+
+  dep_plot <- reactive({
+    df <- panel_effects()
+    df <- df[order(df$cohen_d), ]
+    df$gene_name <- factor(df$gene_name, levels = df$gene_name)
+    df$sig <- df$q < 0.05
+    df$role <- droplevels(factor(df$role, levels = names(ROLE_COLOURS)))
+
+    ggplot(df, aes(x = cohen_d, y = gene_name)) +
+      geom_vline(xintercept = 0, colour = "#5b6470") +
+      geom_segment(aes(x = 0, xend = cohen_d, yend = gene_name, colour = role), alpha = 0.55, linewidth = 0.7) +
+      geom_point(data = df[!df$sig, ], aes(colour = role), size = 2.6) +
+      geom_point(data = df[df$sig, ], aes(fill = role), shape = 21, colour = COL_FG, size = 4, stroke = 1) +
+      scale_colour_manual(values = ROLE_COLOURS, name = NULL) +
+      scale_fill_manual(values = ROLE_COLOURS, guide = "none") +
+      scale_x_continuous(breaks = seq(-2, 3, by = 0.5)) +
+      labs(
+        title = paste("Dependency by gene:", cohort_label()),
+        subtitle = "Negative d: lineage more dependent than the others.\nOutlined points: q < 0.05 (Wilcoxon, BH across the genes shown)",
+        x = sprintf(
+          "Cohen's d, %s (n=%d) vs all other lineages (n=%s)",
+          tolower(cohort_label()), max(df$n_lineage), format(max(df$n_other), big.mark = ",")
+        ),
+        y = NULL
+      ) +
+      theme_academic() +
+      theme(
+        panel.grid.major.x = element_line(colour = "#2a2e36"),
+        panel.grid.major.y = element_blank(),
+        axis.text.y = element_text(
+          colour = unname(ROLE_COLOURS[as.character(df$role)]),
+          face = ifelse(df$sig, "bold", "plain")
+        ),
+        legend.position = "inside",
+        legend.position.inside = c(0.98, 0.02),
+        legend.justification = c(1, 0)
+      )
+  })
+
+  # Plot height grows with the number of genes.
+  dep_height <- function(n, per = 26, base = 150) max(380, base + per * n)
+
+  output$dep_plot <- renderPlot({
+    dep_plot()
+  }, bg = COL_BG, height = function() {
+    n <- tryCatch(nrow(panel_effects()), error = function(e) 10)
+    dep_height(n)
+  })
+
+  output$dl_dep_png <- downloadHandler(
+    filename = function() paste0(input$cancer, "_gene_dependency.png"),
+    content = function(file) {
+      ggsave(file, plot = dep_plot(), width = 9, height = dep_height(nrow(panel_effects())) / 100,
+             dpi = 200, bg = COL_BG)
+    }
+  )
+
+  # -- Tab 6: cell death GO sunburst (GOfan) -------------------------------------
+
+  go_input <- reactive({
+    cancer <- req(input$cancer)
+    validate(need(
+      cancer != ALL_CANCER,
+      "Choose a cancer type in the sidebar. The enrichment is computed per lineage."
+    ))
+    df <- DATA$go %>%
+      filter(lineage == cancer) %>%
+      select(ID, p.adjust, qvalue, count) %>%
+      as.data.frame()
+    validate(need(nrow(df) > 0, "No significantly enriched cell death terms for this lineage."))
+    df
+  })
+
+  go_sunburst <- function(backend) {
+    df <- go_input()
+    org <- org.Hs.eg.db::org.Hs.eg.db
+    g <- GOfan::getGraph(df, org = org, onto = "BP")
+    GOfan::sunburstGO(
+      df, org = org, g = g, fill = "qvalue", onto = "BP",
+      filterNodesByEdgeNumber = 0, plotBy = backend
+    )
+  }
+
+  go_static <- function() {
+    go_sunburst("ggplot2") +
+      scale_fill_gradient(low = "#d4e6f5", high = "#3f86bd", name = "-log10\nadj. p") +
+      labs(title = paste("Cell death GO terms:", cohort_label())) +
+      theme(
+        plot.background = element_rect(fill = COL_BG, colour = NA),
+        panel.background = element_rect(fill = COL_BG, colour = NA),
+        legend.background = element_rect(fill = COL_BG, colour = NA),
+        text = element_text(colour = COL_FG),
+        plot.title = element_text(face = "bold")
+      )
+  }
+
+  output$go_plot_static <- renderPlot({
+    req(input$go_backend == "ggplot2")
+    go_static()
+  }, bg = COL_BG)
+
+  output$go_plot_interactive <- plotly::renderPlotly({
+    req(input$go_backend == "plotly")
+    go_sunburst("plotly")
   })
 
   # -- Reset -------------------------------------------------------------------

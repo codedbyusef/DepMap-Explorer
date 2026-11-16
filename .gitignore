@@ -10,3 +10,6 @@ rsconnect/
 .cache/
 *.rds
 *.log
+
+# Preprocessed data (built by preprocess.R)
+data/*.parquet
